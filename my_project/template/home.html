@@ -5,49 +5,69 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ML Prediction Interface</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 2rem; }
-        .card { max-width: 640px; padding: 1.5rem; border: 1px solid #ddd; border-radius: 8px; }
-        textarea { width: 100%; height: 120px; margin-top: 0.5rem; }
-        button { margin-top: 1rem; padding: 0.75rem 1.25rem; }
-        pre { background: #f7f7f7; padding: 1rem; border-radius: 6px; }
+        body { font-family: Inter, Arial, sans-serif; margin: 0; min-height: 100vh; background: #eef4fb; color: #1f2937; display: flex; justify-content: center; align-items: center; padding: 2rem; }
+        .card { width: 100%; max-width: 680px; padding: 2rem; border-radius: 24px; background: #ffffff; box-shadow: 0 20px 60px rgba(15, 23, 42, 0.08); }
+        h1 { margin-top: 0; font-size: 2rem; letter-spacing: -0.03em; }
+        p { color: #4b5563; line-height: 1.75; }
+        .field { margin-top: 1.5rem; }
+        label { display: block; margin-bottom: 0.75rem; font-weight: 700; color: #111827; }
+        input[type="file"] { width: 100%; padding: 0.95rem 1rem; border: 1px solid #d1d5db; border-radius: 16px; background: #f9fafb; cursor: pointer; }
+        .preview-wrapper { margin-top: 1.5rem; text-align: center; }
+        #preview { max-width: 100%; height: auto; border-radius: 18px; box-shadow: 0 16px 40px rgba(15, 23, 42, 0.08); display: none; }
+        button { margin-top: 1.75rem; padding: 1rem 1.5rem; border: none; border-radius: 14px; background: #2563eb; color: #fff; font-size: 1rem; cursor: pointer; transition: transform 0.15s ease, background 0.15s ease; }
+        button:hover { background: #1d4ed8; transform: translateY(-1px); }
+        pre { margin-top: 1.75rem; background: #f8fafc; padding: 1.25rem; border-radius: 16px; color: #111827; overflow-x: auto; }
     </style>
 </head>
 <body>
     <div class="card">
-        <h1>ML Model Prediction</h1>
-        <p>Enter comma-separated numeric features to send to the ML model via REST API.</p>
-        <form id="predict-form">
-            <label for="input-values">Input values:</label>
-            <textarea id="input-values" placeholder="e.g. 0.5, 1.2, 3.7"></textarea>
-            <button type="submit">Predict</button>
+        <h1>Image Prediction</h1>
+        <p>Upload a photo and let the ML model analyze it. Supported formats: JPG, PNG, GIF.</p>
+        <form id="predict-form" enctype="multipart/form-data">
+            <div class="field">
+                <label for="image-upload">Choose image</label>
+                <input type="file" id="image-upload" accept="image/*" required />
+            </div>
+            <div class="preview-wrapper">
+                <img id="preview" alt="Image preview" />
+            </div>
+            <button type="submit">Upload and Predict</button>
         </form>
         <h2>Response</h2>
-        <pre id="result">Waiting for input...</pre>
+        <pre id="result">Waiting for upload...</pre>
     </div>
     <script>
         const form = document.getElementById('predict-form');
         const result = document.getElementById('result');
+        const fileInput = document.getElementById('image-upload');
+        const preview = document.getElementById('preview');
+
+        fileInput.addEventListener('change', () => {
+            const file = fileInput.files[0];
+            if (!file) {
+                preview.style.display = 'none';
+                return;
+            }
+            preview.src = URL.createObjectURL(file);
+            preview.style.display = 'block';
+        });
 
         form.addEventListener('submit', async function (event) {
             event.preventDefault();
-            const raw = document.getElementById('input-values').value.trim();
-            if (!raw) {
-                result.textContent = 'Please enter comma-separated numbers.';
+            const file = fileInput.files[0];
+            if (!file) {
+                result.textContent = 'Please select an image file to upload.';
                 return;
             }
 
-            const features = raw.split(',').map(v => parseFloat(v.trim())).filter(v => !Number.isNaN(v));
-            if (!features.length) {
-                result.textContent = 'No valid numeric values found.';
-                return;
-            }
+            const formData = new FormData();
+            formData.append('image', file);
 
-            result.textContent = 'Sending request...';
+            result.textContent = 'Sending image...';
             try {
                 const response = await fetch('/api/predict/', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ features }),
+                    body: formData,
                 });
                 const data = await response.json();
                 if (!response.ok) {
@@ -56,7 +76,7 @@
                     result.textContent = JSON.stringify(data, null, 2);
                 }
             } catch (error) {
-                result.textContent = 'Request failed: ' + error.message;
+                result.textContent = 'Upload failed: ' + error.message;
             }
         });
     </script>

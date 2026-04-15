@@ -1,4 +1,5 @@
 import json
+from io import BytesIO
 from pathlib import Path
 
 from django.conf import settings
@@ -43,25 +44,80 @@ def predict_api(request):
         return JsonResponse({'error': 'POST method required'}, status=405)
 
     try:
-        payload = json.loads(request.body.decode('utf-8'))
-        features = payload.get('features') or payload.get('data')
+        image_file = request.FILES.get('image')
+        features = None
+        prediction = None
 
-        if features is None:
-            return JsonResponse({'error': 'Missing features or data in JSON body'}, status=400)
+        if image_file is not None:
+            if not image_file.content_type.startswith('image/'):
+                raise ValueError('Uploaded file must be an image')
 
-        if not isinstance(features, list):
-            raise ValueError('features must be a list of numbers')
+            try:
+                from PIL import Image
+            except ImportError:
+                return JsonResponse({'error': 'Pillow is required for image uploads'}, status=500)
 
-        import numpy as np
+            image = Image.open(image_file).convert('RGB')
+            model = load_ml_model()
+            input_shape = model.input_shape
+            if isinstance(input_shape, list):
+                input_shape = input_shape[0]
+            shape = [dim for dim in input_shape[1:] if dim is not None]
+            if len(shape) not in (2, 3):
+                raise ValueError('Unsupported model input shape for image uploads')
 
-        array = np.asarray(features, dtype=float)
-        if array.ndim == 1:
-            array = array.reshape(1, -1)
-        elif array.ndim > 2:
-            raise ValueError('Input shape not supported')
+            if len(shape) == 2:
+                height, width = shape
+                channels = 3
+                channels_first = False
+            else:
+                if shape[0] in (1, 3) and shape[-1] not in (1, 3):
+                    channels_first = True
+                    channels, height, width = shape
+                else:
+                    channels_first = False
+                    height, width, channels = shape
 
-        model = load_ml_model()
-        prediction = model.predict(array).tolist()
+            if height is None or width is None:
+                raise ValueError('Model input shape cannot contain unknown height or width')
+
+            image = image.resize((width, height))
+            import numpy as np
+            array = np.asarray(image, dtype=np.float32) / 255.0
+            if channels == 1:
+                array = np.mean(array, axis=2, keepdims=True)
+            if channels_first:
+                array = array.transpose(2, 0, 1)
+            array = np.expand_dims(array, axis=0)
+
+            prediction = model.predict(array).tolist()
+            features = {
+                'type': 'image',
+                'name': image_file.name,
+                'content_type': image_file.content_type,
+            }
+        else:
+            if not request.body:
+                return JsonResponse({'error': 'No image file or JSON payload provided'}, status=400)
+
+            payload = json.loads(request.body.decode('utf-8'))
+            features = payload.get('features') or payload.get('data')
+
+            if features is None:
+                return JsonResponse({'error': 'Missing features or data in JSON body'}, status=400)
+
+            if not isinstance(features, list):
+                raise ValueError('features must be a list of numbers')
+
+            import numpy as np
+            array = np.asarray(features, dtype=float)
+            if array.ndim == 1:
+                array = array.reshape(1, -1)
+            elif array.ndim > 2:
+                raise ValueError('Input shape not supported')
+
+            model = load_ml_model()
+            prediction = model.predict(array).tolist()
 
         record = Prediction.objects.create(input_data=features, prediction=prediction)
         return JsonResponse({'prediction': prediction, 'record_id': record.id})
