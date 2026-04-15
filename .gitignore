@@ -5,3 +5,4 @@ __pycache__/
 *.sqlite3
 .env
 .vscode/
+my_project/ml_models/
